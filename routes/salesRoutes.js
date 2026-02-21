@@ -1,8 +1,8 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const CashSale = require('../models/Sale');
-const CreditSale = require('../models/CreditSale');
-const { requireAuth, requireSalesAgent } = require('../middleware/auth');
+const CashSale = require("../models/Sale");
+const CreditSale = require("../models/CreditSale");
+const { requireAuth, requireSalesAgent } = require("../middleware/auth");
 
 /**
  * @swagger
@@ -30,47 +30,64 @@ const { requireAuth, requireSalesAgent } = require('../middleware/auth');
  *               amountPaid:
  *                 type: number
  */
-router.post('/cash', requireAuth, async (req, res) => {
+router.post("/cash", requireAuth, async (req, res) => {
   try {
     // check required fields
-    const { produceName, buyerName, salesAgentName, tonnage, amountPaid } = req.body;
-    
+    const { produceName, buyerName, salesAgentName, tonnage, amountPaid } =
+      req.body;
+
     if (!produceName || produceName.length < 2) {
-      return res.status(400).json({ error: 'name of produce is required and should be at least 2 characters' });
+      return res
+        .status(400)
+        .json({
+          error:
+            "name of produce is required and should be at least 2 characters",
+        });
     }
-    
+
     if (!buyerName || buyerName.length < 2) {
-      return res.status(400).json({ error: 'name of buyer is required and should be at least 2 characters' });
+      return res
+        .status(400)
+        .json({
+          error:
+            "name of buyer is required and should be at least 2 characters",
+        });
     }
-    
+
     if (!salesAgentName || salesAgentName.length < 2) {
-      return res.status(400).json({ error: 'name of sales agent is required and should be at least 2 characters' });
+      return res
+        .status(400)
+        .json({
+          error:
+            "name of sales agent is required and should be at least 2 characters",
+        });
     }
-    
+
     if (amountPaid < 10000) {
-      return res.status(400).json({ error: 'amount paid should be at least 10,000 shillings' });
+      return res
+        .status(400)
+        .json({ error: "amount paid should be at least 10,000 shillings" });
     }
-    
+
     // get current time and date
     const now = new Date();
-    const timeString = now.toTimeString().split(' ')[0];
-    
+    const timeString = now.toTimeString().split(" ")[0];
+
     const sale = new CashSale({
       ...req.body,
       date: now,
       time: timeString,
       branch: req.session.user.branch,
-      recordedBy: req.session.user.id
+      recordedBy: req.session.user.id,
     });
-    
+
     await sale.save();
-    
+
     res.status(201).json({
       success: true,
-      message: 'cash sale registered successfully',
-      sale
+      message: "cash sale registered successfully",
+      sale,
     });
-    
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -104,39 +121,96 @@ router.post('/cash', requireAuth, async (req, res) => {
  *                 type: string
  *                 example: "CM12345678ABCD9E"
  */
-router.post('/credit', requireAuth, async (req, res) => {
+router.post("/credit", requireAuth, async (req, res) => {
   try {
     // check required fields
     const { nationalId, contact, amountDue, tonnage } = req.body;
-    
+
     // validate NIN format
     const ninRegex = /^[A-Z]{2}\d{7}[A-Z]{4}\d[A-Z]$/;
     if (!ninRegex.test(nationalId)) {
-      return res.status(400).json({ error: 'national ID number is not valid' });
+      return res.status(400).json({ error: "national ID number is not valid" });
     }
-    
+
     if (!/^[0-9]{10}$/.test(contact)) {
-      return res.status(400).json({ error: 'contact number must be 10 digits' });
+      return res
+        .status(400)
+        .json({ error: "contact number must be 10 digits" });
     }
-    
+
     if (amountDue < 10000) {
-      return res.status(400).json({ error: 'amount due should be at least 10,000 shillings' });
+      return res
+        .status(400)
+        .json({ error: "amount due should be at least 10,000 shillings" });
     }
-    
+
     const creditSale = new CreditSale({
       ...req.body,
       branch: req.session.user.branch,
-      recordedBy: req.session.user.id
+      recordedBy: req.session.user.id,
     });
-    
+
     await creditSale.save();
-    
+
     res.status(201).json({
       success: true,
-      message: 'credit sale registered successfully',
-      creditSale
+      message: "credit sale registered successfully",
+      creditSale,
     });
-    
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+/**
+ * @swagger
+ * /sales:
+ *   get:
+ *     summary: Get all sales for the current user's branch
+ *     tags: [Sales]
+ *     security:
+ *       - sessionAuth: []
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved sales
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 cashSales:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 creditSales:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       400:
+ *         description: Bad request
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+router.get("/", requireAuth, requireSalesAgent, async (req, res) => {
+  try {
+    const cashSales = await CashSale.find({
+      branch: req.session.user.branch,
+    }).sort({ date: -1 });
+    const creditSales = await CreditSale.find({
+      branch: req.session.user.branch,
+    }).sort({ date: -1 });
+
+    res.status(200).json({
+      success: true,
+      cashSales,
+      creditSales,
+    });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
 const { requireManager } = require('../middleware/auth');
+const jwt = require("jsonwebtoken");
 
 /**
  * @swagger
@@ -48,25 +49,27 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'username or password is incorrect' });
     }
     
-    // store user info in session
-    req.session.user = {
-      id: user._id,
-      username: user.username,
-      role: user.role,
-      fullName: user.fullName,
-      branch: user.branch
-    };
-    
+    // use token for authentication instead of session
+    if(user){
+      let _user = {
+        id: user._id,
+        username: user.username,
+        role: user.role,
+        branch: user.branch
+
+    }
+    const token = jwt.sign(_user, process.env.JWT_SECRET, { expiresIn: '1h' });
     res.json({
       success: true,
-      message: 'logged in successfully',
+      message: "logged in successfully",
+      token, 
       user: {
         username: user.username,
         role: user.role,
         fullName: user.fullName,
         branch: user.branch
       }
-    });
+    });}
     
   } catch (error) {
     res.status(500).json({ error: error.message });
