@@ -1,8 +1,8 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const session = require('express-session');
 const path = require('path');
-require('dotenv').config();
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
+const connectDB = require('./config/db');
 
 // Swagger
 const swaggerUi = require('swagger-ui-express');
@@ -12,30 +12,28 @@ const swaggerSpecs = require('./config/swagger');
 const procurementRoutes = require('./routes/procurementRoutes');
 const salesRoutes = require('./routes/salesRoutes');
 const userRoutes = require('./routes/userRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
+const clientRoutes = require('./routes/clientRoutes');
+const supplierRoutes = require('./routes/supplierRoutes');
 
 const app = express();
 
 // Middleware
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    res.header('Access-Control-Allow-Methods', 'PUT, POST, PATCH, DELETE, GET');
+    return res.status(200).json({});
+  }
+  next();
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Session
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'kgl-secret-key',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { 
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production'
-  }
-}));
+app.use(express.static(path.join(__dirname, '../frontend')));
 
 // MongoDB Connection
-mongoose.connect(process.env.DATABASE_URI)
-.then(() => console.log(' Connected to MongoDB'))
-.catch(err => console.log(' MongoDB connection error:', err));
+connectDB();
 
 // Swagger Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
@@ -44,19 +42,13 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 app.use('/procurement', procurementRoutes);
 app.use('/sales', salesRoutes);
 app.use('/users', userRoutes);
+app.use('/inventory', inventoryRoutes);
+app.use('/clients', clientRoutes);
+app.use('/suppliers', supplierRoutes);
 
 // Home route
 app.get('/', (req, res) => {
-  res.json({
-    message: 'Karibu Groceries LTD API',
-    version: '1.0.0',
-    documentation: '/api-docs',
-    endpoints: {
-      procurement: '/procurement',
-      sales: '/sales',
-      users: '/users'
-    }
-  });
+  res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
 
 // Error handling

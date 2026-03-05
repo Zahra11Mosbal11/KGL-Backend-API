@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const CashSale = require("../models/Sale");
 const CreditSale = require("../models/CreditSale");
+const Inventory = require("../models/Inventory");
+const Client = require("../models/Client");
 const { requireAuth, requireSalesAgent } = require("../middleware/auth");
 
 /**
@@ -29,6 +31,35 @@ const { requireAuth, requireSalesAgent } = require("../middleware/auth");
  *                 type: number
  *               amountPaid:
  *                 type: number
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Cash sale registered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 sale:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
  */
 router.post("/cash", requireAuth, async (req, res) => {
   try {
@@ -69,6 +100,12 @@ router.post("/cash", requireAuth, async (req, res) => {
         .json({ error: "amount paid should be at least 10,000 shillings" });
     }
 
+    // Check stock
+    const inventory = await Inventory.findOne({ produceName, branch: req.user.branch });
+    if (!inventory || inventory.quantity < tonnage) {
+      return res.status(400).json({ error: `Insufficient stock. Available: ${inventory ? inventory.quantity : 0} tonnes` });
+    }
+
     // get current time and date
     const now = new Date();
     const timeString = now.toTimeString().split(" ")[0];
@@ -77,11 +114,16 @@ router.post("/cash", requireAuth, async (req, res) => {
       ...req.body,
       date: now,
       time: timeString,
-      branch: req.session.user.branch,
-      recordedBy: req.session.user.id,
+      branch: req.user.branch,
+      recordedBy: req.user.id,
     });
 
     await sale.save();
+
+    // Decrement stock
+    inventory.quantity -= tonnage;
+    inventory.lastUpdated = Date.now();
+    await inventory.save();
 
     res.status(201).json({
       success: true,
@@ -120,6 +162,35 @@ router.post("/cash", requireAuth, async (req, res) => {
  *               nationalId:
  *                 type: string
  *                 example: "CM12345678ABCD9E"
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Credit sale registered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 creditSale:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
  */
 router.post("/credit", requireAuth, async (req, res) => {
   try {
@@ -144,13 +215,39 @@ router.post("/credit", requireAuth, async (req, res) => {
         .json({ error: "amount due should be at least 10,000 shillings" });
     }
 
+    // Check stock
+    const inventory = await Inventory.findOne({ produceName: req.body.produceName, branch: req.user.branch });
+    if (!inventory || inventory.quantity < tonnage) {
+      return res.status(400).json({ error: `Insufficient stock. Available: ${inventory ? inventory.quantity : 0} tonnes` });
+    }
+
     const creditSale = new CreditSale({
       ...req.body,
-      branch: req.session.user.branch,
-      recordedBy: req.session.user.id,
+      branch: req.user.branch,
+      recordedBy: req.user.id,
     });
 
     await creditSale.save();
+
+    // Update Client Debt
+    await Client.findOneAndUpdate(
+      { nationalId: creditSale.nationalId },
+      { 
+        $inc: { totalDebt: creditSale.amountDue },
+        $setOnInsert: { 
+          name: creditSale.buyerName, 
+          contact: creditSale.contact,
+          location: creditSale.location,
+          branch: req.user.branch
+        }
+      },
+      { upsert: true, new: true }
+    );
+
+    // Decrement stock
+    inventory.quantity -= tonnage;
+    inventory.lastUpdated = Date.now();
+    await inventory.save();
 
     res.status(201).json({
       success: true,
@@ -168,7 +265,7 @@ router.post("/credit", requireAuth, async (req, res) => {
  *     summary: Get all sales for the current user's branch
  *     tags: [Sales]
  *     security:
- *       - sessionAuth: []
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Successfully retrieved sales
@@ -197,14 +294,15 @@ router.post("/credit", requireAuth, async (req, res) => {
  *                 error:
  *                   type: string
  */
-router.get("/", requireAuth, requireSalesAgent, async (req, res) => {
+router.get("/", requireAuth, async (req, res) => {
   try {
-    const cashSales = await CashSale.find({
-      branch: req.session.user.branch,
-    }).sort({ date: -1 });
-    const creditSales = await CreditSale.find({
-      branch: req.session.user.branch,
-    }).sort({ date: -1 });
+    let query = {};
+    if (req.user.role === 'sales_agent') {
+      query.branch = req.user.branch;
+    }
+
+    const cashSales = await CashSale.find(query).sort({ date: -1 });
+    const creditSales = await CreditSale.find(query).sort({ date: -1 });
 
     res.status(200).json({
       success: true,

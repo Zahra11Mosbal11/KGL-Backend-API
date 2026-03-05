@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const Purchase = require('../models/Purchase');
+const Inventory = require('../models/Inventory');
+const Supplier = require('../models/Supplier');
 const { requireManager } = require('../middleware/auth');
 
 /**
@@ -36,6 +38,8 @@ const { requireManager } = require('../middleware/auth');
  *               tonnage:
  *                 type: number
  *                 example: 1000
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       201:
  *         description: registered successfully
@@ -71,10 +75,39 @@ router.post('/', requireManager, async (req, res) => {
     // create and save the purchase
     const purchase = new Purchase({
       ...req.body,
-      recordedBy: req.session.user.id
+      recordedBy: req.user.id
     });
     
     await purchase.save();
+    
+    // Update inventory
+    await Inventory.findOneAndUpdate(
+      { produceName: purchase.produceName, branch: purchase.branch },
+      { 
+        $inc: { quantity: purchase.tonnage },
+        $set: { 
+          produceType: purchase.produceType, 
+          latestCost: purchase.cost,
+          latestSellingPrice: purchase.sellingPrice,
+          lastUpdated: Date.now() 
+        }
+      },
+      { upsert: true, new: true }
+    );
+
+    // Update Supplier Info
+    await Supplier.findOneAndUpdate(
+      { name: purchase.dealerName },
+      { 
+        $set: { 
+          contact: purchase.contact,
+          location: 'TBD', // We don't have location in purchase yet
+          branch: purchase.branch
+        },
+        $addToSet: { productsSupplied: purchase.produceName }
+      },
+      { upsert: true, new: true }
+    );
     
     res.status(201).json({
       success: true,
@@ -93,6 +126,8 @@ router.post('/', requireManager, async (req, res) => {
  *   get:
  *     summary: get all purchases
  *     tags: [Procurement]
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: a list of purchases

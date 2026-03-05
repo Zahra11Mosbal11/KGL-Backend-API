@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
-const { requireManager } = require('../middleware/auth');
+const { requireManager, requireRoles } = require('../middleware/auth');
 const jwt = require("jsonwebtoken");
 
 /**
@@ -56,8 +56,8 @@ router.post('/login', async (req, res) => {
         username: user.username,
         role: user.role,
         branch: user.branch
-
-    }
+      };
+      
     const token = jwt.sign(_user, process.env.JWT_SECRET, { expiresIn: '1h' });
     res.json({
       success: true,
@@ -87,8 +87,7 @@ router.post('/login', async (req, res) => {
  *         description: logged out successfully
  */
 router.post('/logout', (req, res) => {
-  req.session.destroy();
-  res.json({ success: true, message: 'logged out successfully' });
+  res.json({ success: true, message: 'logged out successfully (clear your token on the client)' });
 });
 
 /**
@@ -115,7 +114,9 @@ router.post('/logout', (req, res) => {
  *                 type: string
  *               role:
  *                 type: string
- *                 enum: [manager, sales_agent]
+ *                 enum: [manager, sales_agent, director]
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       201:
  *         description: created successfully
@@ -167,15 +168,17 @@ router.post('/', requireManager, async (req, res) => {
  * @swagger
  * /users:
  *   get:
- *     summary: get all users (for manager only)
+ *     summary: get all users (for manager and director only)
  *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: a list of users
  *       401:
  *         description: unauthorized
  */
-router.get('/', requireManager, async (req, res) => {
+router.get('/', requireRoles(['manager', 'director']), async (req, res) => {
   try {
     const users = await User.find()
       .select('-password')

@@ -1,4 +1,5 @@
 const swaggerJsdoc = require('swagger-jsdoc');
+const path = require('path');
 
 const options = {
   definition: {
@@ -16,15 +17,20 @@ const options = {
     ],
     components: {
       securitySchemes: {
-        sessionAuth: {
-          type: 'apiKey',
-          in: 'cookie',
-          name: 'connect.sid',
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
         },
       },
     },
+    security: [
+      {
+        bearerAuth: [],
+      },
+    ],
   },
-  apis: ['./routes/*.js'], // Path to the API route files where Swagger annotations are defined
+  apis: [path.join(__dirname, '../routes/*.js')], // Use absolute path
 };
 
 const specs = swaggerJsdoc(options);
